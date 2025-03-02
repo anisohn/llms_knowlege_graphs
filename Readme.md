@@ -5,6 +5,7 @@ Ce projet vise à exploiter la puissance des **graphes de connaissances** et des
 ## 🚀 Objectif  
 
 L’objectif est de :  
+
 - **Utiliser un dataset** (exemple : [MathQA](https://github.com/karan-13/MathQA) pour les maths, [EdNet](https://github.com/riiid/ednet) pour l’apprentissage en général).  
 - **Créer un graphe de connaissances** qui structure les concepts et suit la progression de l’élève.  
 - **Entraîner un modèle LLM** sur ce dataset et l’utiliser conjointement avec le graphe pour générer des réponses intelligentes et adaptées.  
@@ -15,11 +16,4 @@ L’objectif est de :
 2️⃣ **Graphe de connaissances** → Suit l’évolution de l’élève, identifie ses forces/faiblesses et guide l’adaptation du contenu.  
 3️⃣ **LLM personnalisé** → Génère des explications adaptées en s’appuyant sur les informations du graphe et les connaissances du dataset.  
 
-## 📌 Exemples d’utilisation  
-- Un élève posant une question sur un concept mathématique reçoit une explication adaptée à son niveau, grâce à l’association du LLM et du graphe.  
-- Le graphe permet d’identifier les notions mal comprises et de proposer des exercices ciblés.  
 
-## 🔧 Technologies envisagées  
-- **LLM** : Fine-tuning avec [Hugging Face Transformers](https://huggingface.co/docs/transformers/index) ou [LlamaIndex](https://gpt-index.readthedocs.io/en/latest/).  
-- **Graphes de connaissances** : Utilisation de [Neo4j](https://neo4j.com/) ou [NetworkX](https://networkx.org/).  
-- **Entraînement** : Exploitation des datasets pédagogiques pertinents.  
