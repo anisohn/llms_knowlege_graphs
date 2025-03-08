@@ -17,3 +17,17 @@ L’objectif est de :
 3️⃣ **LLM personnalisé** → Génère des explications adaptées en s’appuyant sur les informations du graphe et les connaissances du dataset.  
 
 
+
+
+
+
+
+etape 0 :
+
+trouve une senario
+
+cree des graph en utilise prompte 
+et en cree des graph a partir le premier graph
+
+
+
