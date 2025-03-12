@@ -22,12 +22,3 @@ L’objectif est de :
 
 
 
-etape 0 :
-
-trouve une senario
-
-cree des graph en utilise prompte 
-et en cree des graph a partir le premier graph
-
-
-
