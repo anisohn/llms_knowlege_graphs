@@ -16,7 +16,6 @@ async def handle_message(message: cl.Message):
     response = ollama.chat(model=model, messages=[{"role": "user", "content": user_message}])
     answer = response['message']['content']
     
-
     await cl.Message(content=answer).send()
 
 if __name__ == "__main__":

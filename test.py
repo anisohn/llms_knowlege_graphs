@@ -1,10 +1,11 @@
 import PyPDF2
 import chainlit as cl
-from langchain_community.embeddings import OllamaEmbeddings
+from langchain_ollama import OllamaEmbeddings  # Changement de l'import de OllamaEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain.chains import ConversationalRetrievalChain
-from langchain.memory import ChatMessageHistory, ConversationBufferMemory
+from langchain_community.chat_message_histories import ChatMessageHistory  # Changement de l'import de ChatMessageHistory
+from langchain.memory import ConversationBufferMemory
 from langchain_groq import ChatGroq
 from dotenv import load_dotenv
 import random
@@ -75,9 +76,9 @@ async def on_chat_start():
 
     # Définir des actions et envoyer un message pour démarrer l'interaction
     actions = [
-        cl.Action(name="generate_examples", label="Generate Examples", value="ge"),
-        cl.Action(name="generate_quiz", label="Generate Quiz", value="gq"),
-        cl.Action(name="generate_questions", label="Generate Questions", value="gqe")
+        cl.Action(name="generate_examples", label="Generate Examples", payload={"type": "generate_examples"}),
+        cl.Action(name="generate_quiz", label="Generate Quiz", payload={"type": "generate_quiz"}),
+        cl.Action(name="generate_questions", label="Generate Questions", payload={"type": "generate_questions"})
     ]
     await cl.Message(content=f"Processing `{file.name}` done. You can now ask questions or use the buttons below!", actions=actions).send()
     cl.user_session.set("chain", chain)
@@ -86,7 +87,7 @@ async def on_chat_start():
 @cl.on_message
 async def main(message: cl.Message):
     chain = cl.user_session.get("chain")
-    if message.content.lower() in ["ge", "gq", "gqe"]:
+    if message.content in ["generate_examples", "generate_quiz", "generate_questions"]:
         return  # Ignorer le traitement si l'utilisateur clique sur une action
     
     # Générer une réponse en utilisant la chaîne de conversation configurée
@@ -95,9 +96,9 @@ async def main(message: cl.Message):
 
     # Ajouter des boutons avec chaque réponse pour un accès facile
     actions = [
-        cl.Action(name="generate_examples", label="Generate Examples", value="ge"),
-        cl.Action(name="generate_quiz", label="Generate Quiz", value="gq"),
-        cl.Action(name="generate_questions", label="Generate Questions", value="gqe")
+        cl.Action(name="generate_examples", label="Generate Examples", payload={"type": "generate_examples"}),
+        cl.Action(name="generate_quiz", label="Generate Quiz", payload={"type": "generate_quiz"}),
+        cl.Action(name="generate_questions", label="Generate Questions", payload={"type": "generate_questions"})
     ]
     await cl.Message(content=answer, actions=actions).send()
 
