@@ -92,32 +92,54 @@ L'application nécessite :
 
 ```
 ```
-##  des prompts éducatifs
+## Prompts Éducatifs
 
--  Cadrer strictement le domaine (éducation/contenu du PDF)
--  Expliciter le rôle du modèle et les attentes
--  Personnaliser le niveau de complexité
+
+### 2. Prompts de Génération d'Exemples
+**Objectif :** Générer 5 exemples concrets qui illustrent les concepts clés du document PDF.
+
+- Ces exemples peuvent inclure des analogies ou des situations réelles pour mieux comprendre les concepts.
   
-* Prompt  de Génération d'exemples :
- Générer 5 exemples concrets qui illustrent les concepts clés du document PDF. Ces exemples peuvent inclure des analogies     
+**Exemple de prompt :**
+_Générez 5 exemples pratiques illustrant les concepts clés du document PDF. Utilisez des analogies, des situations réelles ou des comparaisons pertinentes._
 
-* Prompt  de Génération de quiz :
+---
 
-  Créer 5 questions de quiz basées sur le texte, chaque question ayant :
+### 3. Prompts de Génération de Quiz
+**Objectif :** Créer 5 questions de quiz basées sur le texte, avec des réponses et explications détaillées.
 
-- Une bonne réponse
-- Trois alternatives plausibles mais incorrectes
-- Une explication détaillée de la réponse correcte   
+Chaque question doit comporter :
+- Une bonne réponse.
+- Trois alternatives plausibles mais incorrectes.
+- Une explication détaillée de la réponse correcte.
 
-* Prompt  de Génération de questions :
+**Exemple de prompt :**
+_Créez 5 questions de quiz basées sur le texte, chaque question ayant :_
+- _Une bonne réponse._
+- _Trois alternatives plausibles mais incorrectes._
+- _Une explication détaillée de la réponse correcte._
 
- Générer 5 questions ouvertes qui encouragent l’analyse et la réflexion sur le texte. Les questions sont basées sur trois thèmes :
+---
 
-- Factual Details (Détails factuels) : Questions sur des faits spécifiques du document.
-- Interpretative Insights (Interprétations) : Questions sur le sens et l’analyse des idées du texte.
-- Critical Evaluations (Évaluations critiques) : Questions qui poussent à argumenter et critiquer le contenu.
+### 4. Prompts de Génération de Questions
+**Objectif :** Générer 5 questions ouvertes qui encouragent l’analyse et la réflexion sur le texte. Les questions sont réparties en trois catégories :
 
+- **Factual Details (Détails factuels)** : Questions sur des faits spécifiques du document.
+- **Interpretative Insights (Interprétations)** : Questions sur le sens et l’analyse des idées du texte.
+- **Critical Evaluations (Évaluations critiques)** : Questions qui poussent à argumenter et critiquer le contenu.
 
-* Prompt  de Génération d'explications :
+**Exemple de prompt :**
+_Générez 5 questions ouvertes sur le texte, couvrant les trois thèmes suivants :_
+- _Détails factuels._
+- _Interprétation des idées._
+- _Évaluation critique du contenu._
 
- Fournir une explication claire et pédagogique d’un concept clé du texte,
+---
+
+### 5. Prompts de Génération d'Explications
+**Objectif :** Fournir une explication claire et pédagogique d’un concept clé du texte.
+
+**Exemple de prompt :**
+_Fournissez une explication détaillée et claire d’un concept important du texte, en utilisant un langage simple et des exemples pour faciliter la compréhension._
+
+---
