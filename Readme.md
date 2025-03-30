@@ -78,6 +78,9 @@ text_splitter = RecursiveCharacterTextSplitter(
 embeddings = OllamaEmbeddings(model="nomic-embed-text")  # Modèle d'embedding
 ```
 
+## Solutions pour traiter les images dans un PDF 
+
+- 1 : pip install pytesseract pdf2image pillow
 
 
 ## ⚠️ Important
@@ -86,4 +89,35 @@ L'application nécessite :
 - Ollama installé localement
 - Les modèles Mistral et nomic-embed-text téléchargés
 - Une connexion internet pour le premier lancement (téléchargement des modèles)
+
 ```
+```
+##  des prompts éducatifs
+
+-  Cadrer strictement le domaine (éducation/contenu du PDF)
+-  Expliciter le rôle du modèle et les attentes
+-  Personnaliser le niveau de complexité
+  
+* Prompt  de Génération d'exemples :
+ Générer 5 exemples concrets qui illustrent les concepts clés du document PDF. Ces exemples peuvent inclure des analogies     
+
+* Prompt  de Génération de quiz :
+
+  Créer 5 questions de quiz basées sur le texte, chaque question ayant :
+
+- Une bonne réponse
+- Trois alternatives plausibles mais incorrectes
+- Une explication détaillée de la réponse correcte   
+
+* Prompt  de Génération de questions :
+
+ Générer 5 questions ouvertes qui encouragent l’analyse et la réflexion sur le texte. Les questions sont basées sur trois thèmes :
+
+- Factual Details (Détails factuels) : Questions sur des faits spécifiques du document.
+- Interpretative Insights (Interprétations) : Questions sur le sens et l’analyse des idées du texte.
+- Critical Evaluations (Évaluations critiques) : Questions qui poussent à argumenter et critiquer le contenu.
+
+
+* Prompt  de Génération d'explications :
+
+ Fournir une explication claire et pédagogique d’un concept clé du texte,
