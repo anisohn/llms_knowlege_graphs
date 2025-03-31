@@ -43,8 +43,11 @@ def extract_text_from_pdf(file_path):
             img = images[page_number]
             ocr_text += pytesseract.image_to_string(img)
     
-    # Retourner à la fois le texte extrait et le texte OCR si nécessaire
-    return pdf_text + "\n" + ocr_text
+    full_text = pdf_text + "\n" + ocr_text
+    # Si le texte extrait est vide, retournez une indication
+    if not full_text.strip():
+        return None  # Indique que le PDF ne contient pas de texte
+    return full_text
 
 @cl.on_chat_start
 async def on_chat_start():
@@ -59,6 +62,12 @@ async def on_chat_start():
     
     file = files[0]
     pdf_text = extract_text_from_pdf(file.path)
+    
+    # Vérifier si le PDF contient du texte
+    if pdf_text is None:
+        await cl.Message(content="Le PDF téléchargé ne contient pas de texte. Assurez-vous qu'il soit lisible ou téléchargez un autre fichier.").send()
+        return  # Arrêter l'exécution si le PDF est vide
+    
     cl.user_session.set("full_pdf_text", pdf_text)
     
     text_splitter = RecursiveCharacterTextSplitter(
