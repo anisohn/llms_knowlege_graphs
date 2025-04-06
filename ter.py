@@ -17,6 +17,7 @@ import random
 import pytesseract
 from pdf2image import convert_from_path
 from PIL import Image
+import json
 
 # Connexion à Neo4j
 uri = "bolt://localhost:7689"
@@ -74,7 +75,7 @@ def extract_text_from_pdf(file_path):
 def get_random_concepts(tx):
     query = """
     MATCH (c:Concept)
-    WHERE c.name IS NOT NULL
+    WHERE c.name IS NOT NULL AND c.known = 0
     RETURN c.name AS concept
     ORDER BY rand()
     LIMIT 5
@@ -135,8 +136,26 @@ async def ask_concept_question():
 # ---------------------------
 @cl.action_callback("yes")
 async def handle_known_concept(action):
-    await cl.Message("Parfait ! ✅ Passons au suivant.").send()
+    # Récupérer le concept actuel
+    concepts = cl.user_session.get("concepts")
+    index = cl.user_session.get("current_index")
+    concept = concepts[index]
+
+    # Mise à jour de la propriété 'known' à 1 dans Neo4j
+    try:
+        with driver.session() as session:
+            session.run("""
+                MATCH (c:Concept)
+                WHERE c.name = $concept
+                SET c.known = 1
+            """, concept=concept)
+        await cl.Message("Parfait ! ✅ Passons au suivant.").send()
+    except Exception as e:
+        await cl.Message(f"⚠️ Erreur lors de la mise à jour du concept : {e}").send()
+
+    # Passer au concept suivant
     cl.user_session.set("current_index", cl.user_session.get("current_index") + 1)
+    
     await ask_concept_question()
 
 # ---------------------------
@@ -165,6 +184,18 @@ async def handle_unknown_concept(action):
     try:
         explanation = await cl.make_async(llm.invoke)(prereq_text + "\n\n" + concept_text)
         quiz_json = await cl.make_async(llm.invoke)(quiz_prompt)
+
+        # Vérification du format du JSON
+        try:
+            quiz_data = json.loads(quiz_json.strip())  # Utilisation de json.loads() pour éviter les problèmes de sécurité
+            if not isinstance(quiz_data, list) or not all(isinstance(q, dict) and 'question' in q and 'answer' in q for q in quiz_data):
+                raise ValueError("Le format du quiz généré est incorrect.")
+        except (json.JSONDecodeError, ValueError) as e:
+            await cl.Message(f"⚠️ Erreur dans le format du quiz généré : {str(e)}").send()
+            cl.user_session.set("current_index", cl.user_session.get("current_index") + 1)
+            await ask_concept_question()
+            return
+
     except Exception as e:
         await cl.Message(f"⚠️ Erreur pendant la génération : {e}").send()
         cl.user_session.set("current_index", cl.user_session.get("current_index") + 1)
@@ -174,18 +205,12 @@ async def handle_unknown_concept(action):
     # Afficher explication
     await cl.Message(f"📘 **Explication de {concept}**\n\n{explanation.strip()}").send()
 
-    try:
-        # Convertir en liste Python (sécurisé)
-        quiz_data = eval(quiz_json.strip())  # ou json.loads() si proprement formaté
-        cl.user_session.set("current_quiz", quiz_data)
-        cl.user_session.set("quiz_index", 0)
-        cl.user_session.set("quiz_score", 0)
+    # Sauvegarde du quiz et gestion de la session
+    cl.user_session.set("current_quiz", quiz_data)
+    cl.user_session.set("quiz_index", 0)
+    cl.user_session.set("quiz_score", 0)
 
-        await send_quiz_question()
-    except Exception as e:
-        await cl.Message("⚠️ Erreur dans la génération du quiz.").send()
-        cl.user_session.set("current_index", cl.user_session.get("current_index") + 1)
-        await ask_concept_question()
+    await send_quiz_question()
 
 # ---------------------------
 # Envoyer une question du quiz
@@ -200,6 +225,23 @@ async def send_quiz_question():
 
         result_msg = f"✅ Tu as bien compris ! Score : {score}/{total}" if score == total else f"📘 Tu as eu {score}/{total}. Continue de réviser !"
         await cl.Message(result_msg).send()
+
+        # Si toutes les questions sont répondues correctement, mettre à jour le concept comme "connu"
+        if score == total:
+            concepts = cl.user_session.get("concepts")
+            current_index = cl.user_session.get("current_index")
+            if current_index < len(concepts):
+                concept = concepts[current_index]
+                try:
+                    with driver.session() as session:
+                        session.run("""
+                            MATCH (c:Concept)
+                            WHERE c.name = $concept
+                            SET c.known = 1
+                        """, concept=concept)
+                    await cl.Message(f"🎓 Le concept '{concept}' est maintenant marqué comme connu.").send()
+                except Exception as e:
+                    await cl.Message(f"⚠️ Erreur lors de la mise à jour du concept : {e}").send()
 
         # Passer au concept suivant
         cl.user_session.set("current_index", cl.user_session.get("current_index") + 1)
