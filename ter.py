@@ -146,6 +146,16 @@ def get_prerequisites(tx, concept):
     result = tx.run(query, concept=concept)
     return [record["prerequisite"] for record in result]
 
+def get_all_concepts(tx):
+    query = """
+    MATCH (c:Concept)
+    WHERE c.name IS NOT NULL 
+    RETURN c.name AS concept
+    ORDER BY rand()
+    """
+    result = tx.run(query)
+    return [record["concept"] for record in result]
+
 # ---------------------------
 # Chat start
 # ---------------------------
@@ -363,6 +373,102 @@ async def handle_pdf_upload():
 
     file = files[0]
     pdf_text = extract_text_from_pdf(file.path)
+    words = pdf_text.split()
+    
+    with driver.session() as session:
+        c = session.read_transaction(get_all_concepts)
+
+    cl.user_session.set("concepts", c)
+    
+    matched_concepts = set()
+
+    for word in c:
+        for w in words:
+            if w in word:  # Vérifie si le mot w est dans word
+                if len(w) > 3:
+                    matched_concepts.add(word)  # Ajoute le mot trouvé à la liste
+
+    if matched_concepts:
+        cl.user_session.set("matched_concepts", matched_concepts)
+        print("Concepts ajoutés à la session utilisateur:", matched_concepts)
+    else:
+        print("Aucun concept correspondant trouvé.")
+    
+    if pdf_text is None:
+        await cl.Message(content="Le PDF téléchargé ne contient pas de texte. Assurez-vous qu'il soit lisible ou téléchargez un autre fichier.").send()
+        return
+
+    cl.user_session.set("full_pdf_text", pdf_text)
+
+    # Générer des explications pour les concepts matchés
+    for concept in matched_concepts:
+        with driver.session() as session:
+            result = session.run("MATCH (c:Concept) WHERE c.name = $concept RETURN c.known AS known", concept=concept)
+            known = result.single()["known"]
+            
+            if known == 1:
+                # Concept déjà connu, fournir l'explication simple
+                explanation_prompt = f"Explique simplement le concept '{concept}' avec des exemples concrets."
+                explanation = await cl.make_async(llm.invoke)(explanation_prompt)
+                await cl.Message(content=f"📘 **Explication du concept '{concept}'**\n\n{explanation.strip()}").send()
+            else:
+                # Concept non connu, générer un quiz
+                quiz_prompt = (
+                    f"Génère 3 questions Vrai/Faux sur le concept '{concept}', avec les bonnes réponses au format JSON :\n"
+                    f"[{{'question': '...', 'answer': 'Vrai'}}, ...]"
+                )
+                quiz_json = await cl.make_async(llm.invoke)(quiz_prompt)
+                
+                try:
+                    quiz_data = json.loads(quiz_json.strip())  # Utilisation de json.loads() pour éviter les problèmes de sécurité
+                    if not isinstance(quiz_data, list) or not all(isinstance(q, dict) and 'question' in q and 'answer' in q for q in quiz_data):
+                        raise ValueError("Le format du quiz généré est incorrect.")
+                    
+                    # Sauvegarder le quiz et envoyer les questions
+                    cl.user_session.set("current_quiz", quiz_data)
+                    cl.user_session.set("quiz_index", 0)
+                    cl.user_session.set("quiz_score", 0)
+
+                    await send_quiz_question()
+
+                except (json.JSONDecodeError, ValueError) as e:
+                    await cl.Message(f"⚠️ Erreur dans le format du quiz généré : {str(e)}").send()
+
+
+    files = None
+    while files is None:
+        files = await cl.AskFileMessage(
+            content="Veuillez uploader un fichier PDF pour commencer!",
+            accept=["application/pdf"],
+            max_size_mb=100,
+            timeout=180
+        ).send()
+
+    file = files[0]
+    pdf_text = extract_text_from_pdf(file.path)
+    words = pdf_text.split()
+    
+    
+    
+    with driver.session() as session:
+     c = session.read_transaction(get_all_concepts)
+     
+    cl.user_session.set("concepts", c)
+    
+    matched_concepts = set() 
+
+    for word in c:
+      for w in words:
+         if w in word:  # Vérifie si le mot w est dans word
+             if len(w) > 3:  
+              matched_concepts.add(word)  # Ajoute le mot trouvé à la liste
+
+    if matched_concepts:
+      cl.user_session.set("concepts", matched_concepts)
+      print("Concepts ajoutés à la session utilisateur:", matched_concepts)
+    else:
+      print("Aucun concept correspondant trouvé.")
+
 
     if pdf_text is None:
         await cl.Message(content="Le PDF téléchargé ne contient pas de texte. Assurez-vous qu'il soit lisible ou téléchargez un autre fichier.").send()
@@ -375,6 +481,7 @@ async def handle_pdf_upload():
         chunk_overlap=50
     )
     texts = text_splitter.split_text(pdf_text)
+
     metadatas = [{"source": f"{i}-pl"} for i in range(len(texts))]
 
     embeddings = OllamaEmbeddings(model="nomic-embed-text")
@@ -402,16 +509,11 @@ async def handle_pdf_upload():
 
     cl.user_session.set("chain", chain)
 
-    actions = [
-        cl.Action(name="generate_examples", label="Générer des exemples", payload={"type": "generate_examples"}),
-        cl.Action(name="generate_quiz", label="Générer un quiz", payload={"type": "generate_quiz"}),
-        cl.Action(name="generate_questions", label="Générer des questions", payload={"type": "generate_questions"}),
-        cl.Action(name="generate_explanation", label="Générer une explication", payload={"type": "generate_explanation"})
-    ]
+
 
     await cl.Message(
         content=f"📄 Traitement de `{file.name}` terminé ! Posez vos questions ou utilisez les options ci-dessous :",
-        actions=actions
+    
     ).send()
     
     cl.user_session.set("chain", chain)
