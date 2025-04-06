@@ -1,5 +1,4 @@
 import random
-import chainlit as cl
 from neo4j import GraphDatabase
 from langchain_community.llms import Ollama
 import ollama
@@ -11,6 +10,7 @@ from langchain_community.vectorstores import Chroma
 from langchain.chains import ConversationalRetrievalChain
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain.memory import ConversationBufferMemory
+
 from dotenv import load_dotenv
 import os
 import random
@@ -69,6 +69,60 @@ def extract_text_from_pdf(file_path):
         return None  # Indique que le PDF ne contient pas de texte
     return full_text
 
+
+@cl.action_callback("generate_examples")
+async def generate_examples(action):
+    chain = cl.user_session.get("chain")
+    random_seed = random.randint(1, 100)
+    text = cl.user_session.get("full_pdf_text")
+    prompt = (f"Using seed {random_seed}, generate exactly 5 creative examples that illustrate key concepts from the text.\n\n{text}")
+    res = await chain.acall({"question": prompt}, callbacks=[cl.AsyncLangchainCallbackHandler()])
+    await cl.Message(content=res["answer"]).send()
+
+@cl.action_callback("generate_quiz")
+async def generate_quiz(action):
+    chain = cl.user_session.get("chain")
+    random_seed = random.randint(1, 100)
+    text = cl.user_session.get("full_pdf_text")
+    prompt = (f"Using seed {random_seed}, generate exactly 5 quiz questions. Each should have one correct answer, "
+              f"three incorrect alternatives, and an explanation for the correct choice.\n\n{text}")
+    res = await chain.acall({"question": prompt}, callbacks=[cl.AsyncLangchainCallbackHandler()])
+    await cl.Message(content=res["answer"]).send()
+
+@cl.action_callback("generate_questions")
+async def generate_questions(action):
+    chain = cl.user_session.get("chain")
+    themes = ["Factual Details", "Interpretative Insights", "Critical Evaluations"]
+    random_theme = random.choice(themes)
+    random_seed = random.randint(1, 100)
+    text = cl.user_session.get("full_pdf_text")
+    prompt = (f"Using seed {random_seed}, generate 5 unique questions focusing on '{random_theme}'.\n\n{text}")
+    res = await chain.acall({"question": prompt}, callbacks=[cl.AsyncLangchainCallbackHandler()])
+    await cl.Message(content=res["answer"]).send()
+
+@cl.action_callback("generate_explanation")
+async def generate_explanation(action):
+    chain = cl.user_session.get("chain")
+    text = cl.user_session.get("full_pdf_text")
+    prompt = ("Provide a detailed and pedagogical explanation of a key concept from the text.\n\n" + text)
+    res = await chain.acall({"question": prompt}, callbacks=[cl.AsyncLangchainCallbackHandler()])
+    answer = res["answer"]
+    sources = "\n\nSources:\n" + "\n".join([f"- {doc.metadata['source']}" for doc in res["source_documents"]])
+    await cl.Message(content=answer + sources).send()
+
+@cl.on_message
+async def main(message: cl.Message):
+    chain = cl.user_session.get("chain")
+    cb = cl.AsyncLangchainCallbackHandler()
+    
+    res = await chain.acall({"question": message.content}, callbacks=[cb])
+    answer = res["answer"]
+    sources = res["source_documents"]
+    
+    sources_content = "\n\nSources:\n" + "\n".join([f"- {doc.metadata['source']}" for doc in sources]) if sources else ""
+    await cl.Message(content=answer + sources_content).send()
+
+
 # ---------------------------
 # Fonctions base de données
 # ---------------------------
@@ -102,12 +156,15 @@ async def on_chat_start():
 
     if not concepts:
         await cl.Message("Aucun concept trouvé dans la base de données.").send()
+        await handle_pdf_upload()
         return
 
     cl.user_session.set("concepts", concepts)
     cl.user_session.set("current_index", 0)
 
     await ask_concept_question()
+
+
 
 # ---------------------------
 # Étape 1 : Demande initiale
@@ -118,8 +175,8 @@ async def ask_concept_question():
     index = cl.user_session.get("current_index")
 
     if index >= len(concepts):
-        await cl.Message("🎓 Tu as terminé tous les concepts ! Place maintenant à l'analyse du PDF.").send()
-        await handle_pdf_upload()  # Lance l'analyse du PDF
+        await cl.Message("🎓 Tu as terminé tous les concepts ! Place maintenant à l'analyse du PDF.").send()  
+        await handle_pdf_upload()
         return
 
     concept = concepts[index]
@@ -326,12 +383,14 @@ async def handle_pdf_upload():
     )
 
     message_history = ChatMessageHistory()
+    
     memory = ConversationBufferMemory(
-        memory_key="chat_history",
-        output_key="answer",
-        chat_memory=message_history,
-        return_messages=True,
-    )
+    memory_key="chat_history",
+    output_key="answer",
+    chat_memory=message_history,
+    return_messages=True,
+)
+   
 
     chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
@@ -354,3 +413,5 @@ async def handle_pdf_upload():
         content=f"📄 Traitement de `{file.name}` terminé ! Posez vos questions ou utilisez les options ci-dessous :",
         actions=actions
     ).send()
+    
+    cl.user_session.set("chain", chain)
