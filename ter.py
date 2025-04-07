@@ -375,24 +375,47 @@ async def handle_pdf_upload():
     pdf_text = extract_text_from_pdf(file.path)
     words = pdf_text.split()
     
+    summary_prompt = f"Produis un résumé concis et structuré de ce texte en français. Mets en avant les concepts clés et les idées principales :\n\n{pdf_text}"
+    b = await cl.make_async(llm.invoke)(summary_prompt)
+    await cl.Message(content=f"📝 **Résumé généré :**\n\n{b}").send()
+    
     with driver.session() as session:
-        c = session.read_transaction(get_all_concepts)
-
-    cl.user_session.set("concepts", c)
+       concepts = session.read_transaction(get_all_concepts)
+    
+  
+    
+    cl.user_session.set("concepts", concepts)
     
     matched_concepts = set()
-
-    for word in c:
-        for w in words:
-            if w in word:  # Vérifie si le mot w est dans word
-                if len(w) > 3:
-                    matched_concepts.add(word)  # Ajoute le mot trouvé à la liste
-
+    
+    
+    for concept in concepts:
+         prompt = f"""
+         Analyse ce résumé et détermine s'il mentionne ou traite du concept "{concept}". 
+         Réponds uniquement par 'Oui' ou 'Non' :
+         Résumé : {b}"""
+         
+         try:
+             response = await cl.make_async(llm.invoke)(prompt)
+             if "oui" in response.lower():
+                 matched_concepts.add(concept)
+                 print(f"Concept trouvé : {concept}")
+         except Exception as e:
+             print(f"Erreur lors de la vérification du concept {concept}: {e}")
+        
+              
+    
+    
     if matched_concepts:
         cl.user_session.set("matched_concepts", matched_concepts)
-        print("Concepts ajoutés à la session utilisateur:", matched_concepts)
+        print(f"Concepts correspondants trouvés : {len(matched_concepts)}")
     else:
         print("Aucun concept correspondant trouvé.")
+  
+    
+
+    
+    print(matched_concepts)
     
     if pdf_text is None:
         await cl.Message(content="Le PDF téléchargé ne contient pas de texte. Assurez-vous qu'il soit lisible ou téléchargez un autre fichier.").send()
@@ -434,47 +457,6 @@ async def handle_pdf_upload():
                 except (json.JSONDecodeError, ValueError) as e:
                     await cl.Message(f"⚠️ Erreur dans le format du quiz généré : {str(e)}").send()
 
-
-    files = None
-    while files is None:
-        files = await cl.AskFileMessage(
-            content="Veuillez uploader un fichier PDF pour commencer!",
-            accept=["application/pdf"],
-            max_size_mb=100,
-            timeout=180
-        ).send()
-
-    file = files[0]
-    pdf_text = extract_text_from_pdf(file.path)
-    words = pdf_text.split()
-    
-    
-    
-    with driver.session() as session:
-     c = session.read_transaction(get_all_concepts)
-     
-    cl.user_session.set("concepts", c)
-    
-    matched_concepts = set() 
-
-    for word in c:
-      for w in words:
-         if w in word:  # Vérifie si le mot w est dans word
-             if len(w) > 3:  
-              matched_concepts.add(word)  # Ajoute le mot trouvé à la liste
-
-    if matched_concepts:
-      cl.user_session.set("concepts", matched_concepts)
-      print("Concepts ajoutés à la session utilisateur:", matched_concepts)
-    else:
-      print("Aucun concept correspondant trouvé.")
-
-
-    if pdf_text is None:
-        await cl.Message(content="Le PDF téléchargé ne contient pas de texte. Assurez-vous qu'il soit lisible ou téléchargez un autre fichier.").send()
-        return
-
-    cl.user_session.set("full_pdf_text", pdf_text)
 
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=1200,
