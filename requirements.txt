@@ -1,0 +1,6 @@
+chainlit
+langchain==0.1.14
+pydantic==1.10.13
+openai
+neo4j
+tiktoken
