@@ -23,10 +23,11 @@ import json
 uri = "bolt://localhost:7689"
 username = "neo4j"
 password = "12345678"
-
+student_id = "student_123"
 try:
     driver = GraphDatabase.driver(uri, auth=(username, password))
     with driver.session() as session:
+        
         result = session.run("RETURN 1 AS test")
         for record in result:
             print("Connexion réussie:", record["test"])

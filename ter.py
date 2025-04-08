@@ -27,6 +27,7 @@ password = "12345678"
 try:
     driver = GraphDatabase.driver(uri, auth=(username, password))
     with driver.session() as session:
+        
         result = session.run("RETURN 1 AS test")
         for record in result:
             print("Connexion réussie:", record["test"])
