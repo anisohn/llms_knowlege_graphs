@@ -482,7 +482,9 @@ async def handle_pdf_upload():
                 await cl.Message(f"📘 **Explication de {concept}**\n\n{explanation.strip()}").send()
     
     
-    cl.Message(f"🎓 pdf a ete expliquer vous pouver poser votre qustionne ")
+    await cl.Message(f"🎓 pdf a été expliqué, vous pouvez poser votre question.").send()
+
+    
               
 
   
