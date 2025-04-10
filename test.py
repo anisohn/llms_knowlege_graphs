@@ -20,7 +20,7 @@ from PIL import Image
 import json
 
 # Connexion à Neo4j
-uri = "bolt://localhost:7689"
+uri = "bolt://localhost:7687"
 username = "neo4j"
 password = "12345678"
 
@@ -460,6 +460,7 @@ async def handle_pdf_upload():
 
     # Générer des explications pour les concepts matchés
     for concept in matched_concepts:
+        print("RAH BDA")
         with driver.session() as session:
             result = session.run("MATCH (c:Concept) WHERE c.name = $concept RETURN c.known AS known", concept=concept)
             known = result.single()["known"]
@@ -471,32 +472,18 @@ async def handle_pdf_upload():
                 await cl.Message(content=f"📘 **Explication du concept '{concept}'**\n\n{explanation.strip()}").send()
             else:
                 
-                  # Concept déjà connu, fournir l'explication simple
-                explanation_prompt = f"Explique simplement le concept '{concept}' avec des exemples concrets."
-                explanation = await cl.make_async(llm.invoke)(explanation_prompt)
-                await cl.Message(content=f"📘 **Explication du concept '{concept}'**\n\n{explanation.strip()}").send()
-                # Concept non connu, générer un quiz
-                quiz_prompt = (
-                    f"Génère 3 questions Vrai/Faux sur le concept '{concept}', avec les bonnes réponses au format JSON :\n"
-                    f"[{{'question': '...', 'answer': 'Vrai'}}, ...]"
-                )
-                quiz_json = await cl.make_async(llm.invoke)(quiz_prompt)
+                with driver.session() as session:
+                     prerequisites = session.read_transaction(get_prerequisites, concept)
+                prereq_text = (
+                    f"Explique les prérequis suivants pour bien comprendre le concept '{concept}' : {', '.join(prerequisites)}.\n"
+                    if prerequisites else "Ce concept ne nécessite aucun prérequis particulier.\n")
                 
-                try:
-                    quiz_data = json.loads(quiz_json.strip())  # Utilisation de json.loads() pour éviter les problèmes de sécurité
-                    if not isinstance(quiz_data, list) or not all(isinstance(q, dict) and 'question' in q and 'answer' in q for q in quiz_data):
-                        raise ValueError("Le format du quiz généré est incorrect.")
-                    
-                    # Sauvegarder le quiz et envoyer les questions
-                    cl.user_session.set("current_quiz", quiz_data)
-                    cl.user_session.set("quiz_index", 0)
-                    cl.user_session.set("quiz_score", 0)
-
-                    await send_quiz_question()
-
-                except (json.JSONDecodeError, ValueError) as e:
-                    await cl.Message(f"⚠️ Erreur dans le format du quiz généré : {str(e.msg)}").send()
-
+                explanation = await cl.make_async(llm.invoke)(prereq_text + "\n\n" + explanation_prompt)
+                await cl.Message(f"📘 **Explication de {concept}**\n\n{explanation.strip()}").send()
+    
+    
+    cl.Message(f"🎓 pdf a ete expliquer vous pouver poser votre qustionne ")
+              
 
   
    
