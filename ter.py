@@ -458,30 +458,45 @@ async def handle_pdf_upload():
        
     cl.user_session.set("full_pdf_text", pdf_text)
 
-    # Générer des explications pour les concepts matchés
+    
     for concept in matched_concepts:
         print("RAH BDA")
         with driver.session() as session:
             result = session.run("MATCH (c:Concept) WHERE c.name = $concept RETURN c.known AS known", concept=concept)
             known = result.single()["known"]
-            
+            explanation_prompt = f"Explique ensuite le concept '{concept}' avec des exemples concrets et des analogies."
             if known == 1:
-                # Concept déjà connu, fournir l'explication simple
-                explanation_prompt = f"Explique simplement le concept '{concept}' avec des exemples concrets."
-                explanation = await cl.make_async(llm.invoke)(explanation_prompt)
-                await cl.Message(content=f"📘 **Explication du concept '{concept}'**\n\n{explanation.strip()}").send()
+                explanation_text = explanation_prompt
             else:
-                
                 with driver.session() as session:
                      prerequisites = session.read_transaction(get_prerequisites, concept)
                 prereq_text = (
                     f"Explique les prérequis suivants pour bien comprendre le concept '{concept}' : {', '.join(prerequisites)}.\n"
                     if prerequisites else "Ce concept ne nécessite aucun prérequis particulier.\n")
+                explanation_text = prereq_text + "\n\n" + explanation_prompt
                 
-                explanation = await cl.make_async(llm.invoke)(prereq_text + "\n\n" + explanation_prompt)
-                await cl.Message(f"📘 **Explication de {concept}**\n\n{explanation.strip()}").send()
+            explanation = await cl.make_async(llm.invoke)(explanation_text)
+            await cl.Message(f"📘 **Explication de {concept}**\n\n{explanation.strip()}").send()
+            
     
-    
+    print("rah kmel hena")            
+    if matched_concepts:
+        print("matched concepts", matched_concepts)
+        quiz_prompt = f"""
+        Génère 10 questions de quiz à choix multiples (QCM) en français, chacune liée à un des concepts suivants : {', '.join(matched_concepts)}.
+        Pour chaque question :
+        - Fournis 1 bonne réponse et 3 distracteurs plausibles.
+        - Indique clairement la bonne réponse.
+        - Utilise un format clair comme :
+        **Question 1 :** Quel est le rôle de XYZ ?
+        A. Réponse fausse
+        B. Réponse correcte ✅
+        C. Réponse fausse
+        D. Réponse fausse
+        Passe en revue tous les concepts pour couvrir un éventail varié."""
+        quiz_output = await cl.make_async(llm.invoke)(quiz_prompt)
+        print("QUIZ OUTPUT:", quiz_output)
+        await cl.Message(content=f"🧠 **Quiz basé sur les concepts détectés :**\n\n{quiz_output.strip()}").send()
     await cl.Message(f"🎓 pdf a été expliqué, vous pouvez poser votre question.").send()
 
     
