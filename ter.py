@@ -466,6 +466,7 @@ async def handle_pdf_upload():
             known = result.single()["known"]
             explanation_prompt = f"Explique ensuite le concept '{concept}' avec des exemples concrets et des analogies."
             if known == 1:
+                # hena zid explanation text ou chof kifh tplaciha bah trigel probleme psq mahoch ykhrej kml les explication
                 explanation_text = explanation_prompt
             else:
                 with driver.session() as session:
