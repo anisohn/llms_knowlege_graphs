@@ -239,10 +239,22 @@ async def handle_unknown_concept(action):
         prerequisites = session.read_transaction(get_prerequisites, concept)
 
     prereq_text = (
-        f"Explique les prérequis suivants pour bien comprendre le concept '{concept}' : {', '.join(prerequisites)}.\n"
-        if prerequisites else "Ce concept ne nécessite aucun prérequis particulier.\n"
-    )
-    concept_text = f"Explique ensuite le concept '{concept}' avec des exemples concrets et des analogies."
+        f"""
+        Pour bien comprendre le concept '{concept}', il est essentiel de maîtriser les notions suivantes : {', '.join(prerequisites)}.
+        Pour chaque prérequis :
+        - Donne une explication simple et claire.
+        - Illustre avec des exemples concrets ou des analogies si possible.
+        - Propose des ressources ou articles utiles (en ligne ou théoriques) pour approfondir la compréhension."""
+    if prerequisites
+    else "Ce concept ne nécessite aucun prérequis particulier.\n")
+
+    concept_text = f"""
+    Explique ensuite le concept '{concept}' de manière claire et accessible :
+    - Décris son but, son utilité et dans quel contexte il est important.
+    - Utilise des exemples concrets et des analogies pour faciliter la compréhension.
+    - Suggère quelques ressources (articles, tutoriels, vidéos, etc.) pour aller plus loin et mieux maîtriser ce concept.
+    """
+
 
     quiz_prompt = (
         f"Génère 3 questions Vrai/Faux avec les bonnes réponses, au format JSON comme ceci :\n"
@@ -363,48 +375,42 @@ async def handle_quiz_response(user_answer):
 # Lancer l'analyse du PDF après la fin des quiz
 # ---------------------------
 async def handle_pdf_upload():
-    
     files = None
     
+    # Demande d'upload de fichier
     while files is None:
         files = await cl.AskFileMessage(
-            content="Veuillez uploader un fichier PDF pour commencer!",
+            content="📄 Veuillez uploader un fichier PDF pour commencer !",
             accept=["application/pdf"],
             max_size_mb=100,
             timeout=180
         ).send()
 
     file = files[0]
-    
     pdf_text = extract_text_from_pdf(file.path)
-    
-    if pdf_text is None:
-        await cl.Message(content="Le PDF téléchargé ne contient pas de texte. Assurez-vous qu'il soit lisible ou téléchargez un autre fichier.").send()
-        return
-    
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1200,
-        chunk_overlap=50)
-    
-    texts = text_splitter.split_text(pdf_text)
 
+    if not pdf_text:
+        await cl.Message(content="⚠️ Le PDF téléchargé ne contient pas de texte exploitable. Veuillez essayer avec un autre fichier.").send()
+        return
+
+    # Découpage du texte
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1200, chunk_overlap=50)
+    texts = text_splitter.split_text(pdf_text)
     metadatas = [{"source": f"{i}-pl"} for i in range(len(texts))]
 
+    # Embedding & indexation
     embeddings = OllamaEmbeddings(model="nomic-embed-text")
-    docsearch = await cl.make_async(Chroma.from_texts)(
-        texts, embeddings, metadatas=metadatas
+    docsearch = await cl.make_async(Chroma.from_texts)(texts, embeddings, metadatas=metadatas)
+
+    # Mémoire de conversation
+    memory = ConversationBufferMemory(
+        memory_key="chat_history",
+        output_key="answer",
+        chat_memory=ChatMessageHistory(),
+        return_messages=True,
     )
 
-    message_history = ChatMessageHistory()
-    
-    memory = ConversationBufferMemory(
-    memory_key="chat_history",
-    output_key="answer",
-    chat_memory=message_history,
-    return_messages=True,
-)
-   
-
+    # Création de la chaîne de QA
     chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
         chain_type="stuff",
@@ -412,92 +418,99 @@ async def handle_pdf_upload():
         memory=memory,
         return_source_documents=True
     )
-    
     cl.user_session.set("chain", chain)
-    
-    
-    
-    summary_prompt = f"Produis un résumé concis et structuré de ce texte en français. Mets en avant les concepts clés et les idées principales :\n\n{pdf_text}"
-    
-    b = await cl.make_async(llm.invoke)(summary_prompt)
-    
-    await cl.Message(content=f"📝 **Résumé généré :**\n\n{b}").send()
-    
+
+    # Message d’attente pour l’analyse du PDF
+    wait_message = await cl.Message("🔍 Analyse du PDF en cours...").send()
+
+    # Résumé du contenu
+    summary_prompt = f"""
+    Fais un résumé structuré et concis du texte suivant, en mettant en valeur les concepts clés et idées principales :
+    {pdf_text}
+    """
+    summary = await cl.make_async(llm.invoke)(summary_prompt)
+
+    # Récupération de tous les concepts
     with driver.session() as session:
-       concepts = session.read_transaction(get_all_concepts)
-    
-  
-    
+        concepts = session.read_transaction(get_all_concepts)
     cl.user_session.set("concepts", concepts)
-    
+
     matched_concepts = set()
-    
-    
+
+    # Détection des concepts mentionnés dans le résumé
     for concept in concepts:
-         prompt = f"""
-         Analyse ce résumé et détermine s'il mentionne ou traite du concept "{concept}". 
-         Réponds uniquement par 'Oui' ou 'Non' :
-         Résumé : {b}"""
-         
-         try:
-             response = await cl.make_async(llm.invoke)(prompt)
-             if "oui" in response.lower():
-                 matched_concepts.add(concept)
-                 print(f"Concept trouvé : {concept}")
-         except Exception as e:
-             print(f"Erreur lors de la vérification du concept {concept}: {e}")
-        
-              
-    
-    
+        prompt = f"""
+        Analyse ce résumé et détermine s'il mentionne ou traite du concept \"{concept}\".
+        Réponds uniquement par 'Oui' ou 'Non'.
+
+        Résumé :
+        {summary}
+        """
+        try:
+            response = await cl.make_async(llm.invoke)(prompt)
+            if "oui" in response.strip().lower():
+                matched_concepts.add(concept)
+
+                with driver.session() as session:
+                    result = session.run("MATCH (c:Concept) WHERE c.name = $concept RETURN c.known AS known", concept=concept)
+                    known = result.single()["known"]
+
+                explanation_prompt = f"""
+                Explique le concept '{concept}' de manière claire et accessible :
+                - Précise à quoi il sert et pourquoi il est important.
+                - Utilise des exemples concrets et des analogies.
+                - Propose des ressources pour approfondir.
+                """
+
+                if known == 0:
+                    with driver.session() as session:
+                        prerequisites = session.read_transaction(get_prerequisites, concept)
+
+                    if prerequisites:
+                        prereq_text = f"""
+                        Pour bien comprendre le concept '{concept}', il faut connaître les notions suivantes : {', '.join(prerequisites)}.
+                        Explique ces prérequis simplement, avec des exemples concrets, et propose des ressources pour les étudier.
+                        """
+                    else:
+                        prereq_text = "Ce concept ne nécessite aucun prérequis particulier.\n"
+
+                    explanation_text = prereq_text + "\n\n" + explanation_prompt
+                else:
+                    explanation_text = explanation_prompt
+
+                explanation = await cl.make_async(llm.invoke)(explanation_text)
+                await cl.Message(f"📘 **Explication de {concept}**\n\n{explanation.strip()}").send()
+
+        except Exception as e:
+            print(f"❌ Erreur lors de la vérification du concept '{concept}' : {e}")
+
+    await wait_message.remove()
+
     if matched_concepts:
         cl.user_session.set("matched_concepts", matched_concepts)
-        
-    else:
-        await cl.Message(content="Le PDF téléchargé ne contient aucun concept .").send()
-       
-    cl.user_session.set("full_pdf_text", pdf_text)
 
-    
-    for concept in matched_concepts:
-        print("RAH BDA")
-        with driver.session() as session:
-            result = session.run("MATCH (c:Concept) WHERE c.name = $concept RETURN c.known AS known", concept=concept)
-            known = result.single()["known"]
-            explanation_prompt = f"Explique ensuite le concept '{concept}' avec des exemples concrets et des analogies."
-            if known == 1:
-                explanation_text = explanation_prompt
-            else:
-                with driver.session() as session:
-                     prerequisites = session.read_transaction(get_prerequisites, concept)
-                prereq_text = (
-                    f"Explique les prérequis suivants pour bien comprendre le concept '{concept}' : {', '.join(prerequisites)}.\n"
-                    if prerequisites else "Ce concept ne nécessite aucun prérequis particulier.\n")
-                explanation_text = prereq_text + "\n\n" + explanation_prompt
-                
-            explanation = await cl.make_async(llm.invoke)(explanation_text)
-            await cl.Message(f"📘 **Explication de {concept}**\n\n{explanation.strip()}").send()
-            
-    
-    print("rah kmel hena")            
-    if matched_concepts:
-        print("matched concepts", matched_concepts)
+        # Génération du quiz
         quiz_prompt = f"""
-        Génère 10 questions de quiz à choix multiples (QCM) en français, chacune liée à un des concepts suivants : {', '.join(matched_concepts)}.
+        Génère 5 questions de quiz à choix multiples (QCM), chacune portant sur un des concepts suivants : {', '.join(matched_concepts)}.
         Pour chaque question :
-        - Fournis 1 bonne réponse et 3 distracteurs plausibles.
-        - Indique clairement la bonne réponse.
+        - Propose une bonne réponse et trois distracteurs plausibles.
+        - N'indique PAS la bonne réponse.
         - Utilise un format clair comme :
         **Question 1 :** Quel est le rôle de XYZ ?
-        A. Réponse fausse
-        B. Réponse correcte ✅
-        C. Réponse fausse
-        D. Réponse fausse
-        Passe en revue tous les concepts pour couvrir un éventail varié."""
+        A. Réponse plausible
+        B. Réponse plausible
+        C. Réponse plausible
+        D. Réponse plausible
+        Adapte la langue du quiz à celle des concepts si besoin.
+        """
+
         quiz_output = await cl.make_async(llm.invoke)(quiz_prompt)
-        print("QUIZ OUTPUT:", quiz_output)
-        await cl.Message(content=f"🧠 **Quiz basé sur les concepts détectés :**\n\n{quiz_output.strip()}").send()
-    await cl.Message(f"🎓 pdf a été expliqué, vous pouvez poser votre question.").send()
+        await cl.Message(f"🧠 **Quiz basé sur les concepts détectés :**\n\n{quiz_output.strip()}").send()
+    else:
+        await cl.Message("❌ Aucun concept détecté dans ce document.").send()
+
+    cl.user_session.set("full_pdf_text", pdf_text)
+    await cl.Message("🎓 Le PDF a été traité. Vous pouvez maintenant poser vos questions !").send()
 
     
               
