@@ -475,7 +475,7 @@ async def handle_pdf_upload():
                         prereq_text = "Ce concept ne nécessite aucun prérequis particulier.\n"
 
                     explanation_text = prereq_text + "\n\n" + explanation_prompt
-                else:
+                elif known == 1 :
                     explanation_text = explanation_prompt
 
                 explanation = await cl.make_async(llm.invoke)(explanation_text)
