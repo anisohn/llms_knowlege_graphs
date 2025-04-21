@@ -142,4 +142,11 @@ _Générez 5 questions ouvertes sur le texte, couvrant les trois thèmes suivant
 **Exemple de prompt :**
 _Fournissez une explication détaillée et claire d’un concept important du texte, en utilisant un langage simple et des exemples pour faciliter la compréhension._
 
+ explanation_prompt = f"""
+                Explique le concept '{concept}' de manière claire et accessible :
+                - Précise à quoi il sert et pourquoi il est important.
+                - Utilise des exemples concrets et des analogies.
+                - Propose des ressources pour approfondir.
+                """
+
 ---
