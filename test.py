@@ -10,7 +10,6 @@ from langchain_community.vectorstores import Chroma
 from langchain.chains import ConversationalRetrievalChain
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain.memory import ConversationBufferMemory
-
 from dotenv import load_dotenv
 import os
 import random
@@ -238,9 +237,15 @@ async def handle_unknown_concept(action):
     with driver.session() as session:
         prerequisites = session.read_transaction(get_prerequisites, concept)
 
-    prereq_text = f"""
-                        Pour bien comprendre le concept '{concept}', il est important de se concentrer uniquement sur les prérequis les plus pertinents et directement liés à ce concept. Parmi les notions suivantes : {', '.join(prerequisites)}, identifie uniquement celles qui sont étroitement liées à '{concept}'.
-                        Explique uniquement ces prérequis de manière simple, avec des exemples concrets, et propose des ressources utiles pour les étudier."""
+    prereq_text = (
+        f"""
+        Pour bien comprendre le concept '{concept}', il est essentiel de maîtriser les notions suivantes : {', '.join(prerequisites)}.
+        Pour chaque prérequis :
+        - Donne une explication simple et claire.
+        - Illustre avec des exemples concrets ou des analogies si possible.
+        - Propose des ressources ou articles utiles (en ligne ou théoriques) pour approfondir la compréhension."""
+    if prerequisites
+    else "Ce concept ne nécessite aucun prérequis particulier.\n")
 
     concept_text = f"""
     Explique ensuite le concept '{concept}' de manière claire et accessible :
@@ -462,14 +467,14 @@ async def handle_pdf_upload():
 
                     if prerequisites:
                         prereq_text = f"""
-                        Pour bien comprendre le concept '{concept}', il est important de se concentrer uniquement sur les prérequis les plus pertinents et directement liés à ce concept. Parmi les notions suivantes : {', '.join(prerequisites)}, identifie uniquement celles qui sont étroitement liées à '{concept}'.
-                        Explique uniquement ces prérequis de manière simple, avec des exemples concrets, et propose des ressources utiles pour les étudier."""
-
+                        Pour bien comprendre le concept '{concept}', il faut connaître les notions suivantes : {', '.join(prerequisites)}.
+                        Explique ces prérequis simplement, avec des exemples concrets, et propose des ressources pour les étudier.
+                        """
                     else:
                         prereq_text = "Ce concept ne nécessite aucun prérequis particulier.\n"
 
                     explanation_text = prereq_text + "\n\n" + explanation_prompt
-                else:
+                elif known == 1 :
                     explanation_text = explanation_prompt
 
                 explanation = await cl.make_async(llm.invoke)(explanation_text)
