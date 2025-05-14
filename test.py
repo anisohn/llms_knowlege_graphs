@@ -289,7 +289,7 @@ async def handle_unknown_concept(action):
 
         # Nettoyage du JSON
         quiz_json = quiz_response.strip()
-        quiz_json = quiz_json.replace("'", '"').replace("“", '"').replace("”", '"')
+        quiz_json = quiz_json.replace("“", '"').replace("”", '"') 
         
         # Extraction du JSON depuis les blocs Markdown
         if '```json' in quiz_json:
