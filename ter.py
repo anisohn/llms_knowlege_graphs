@@ -17,11 +17,14 @@ import pytesseract
 from pdf2image import convert_from_path
 from PIL import Image
 import json
+chatCount = 0
 
 # Connexion à Neo4j
 uri = "bolt://localhost:7687"
 username = "neo4j"
 password = "12345678"
+
+
 
 try:
     driver = GraphDatabase.driver(uri, auth=(username, password))
@@ -112,6 +115,10 @@ async def generate_explanation(action):
 
 @cl.on_message
 async def main(message: cl.Message):
+    global chatCount 
+    chatCount += 1
+    if chatCount > 5:
+        print("Limite de messages atteinte.")
     chain = cl.user_session.get("chain")
     cb = cl.AsyncLangchainCallbackHandler()
     
@@ -239,17 +246,17 @@ async def handle_unknown_concept(action):
 
     prereq_text = (
         f"""
-        Pour bien comprendre le concept '{concept}', il est important de maîtriser certains prérequis étroitement liés à ce sujet.
-        Voici les prérequis pertinents :
-        {', '.join(prerequisites)}
-        Pour chaque prérequis sélectionné :
-        - Explique uniquement les aspects directement utiles pour comprendre le concept '{concept}'.
-        - Illustre chaque point avec un exemple concret ou une analogie liée au concept.
-        - Ne développe que les notions essentielles pour faire le lien avec le concept.
-        - Suggère une ressource ciblée (article, tutoriel ou vidéo) pour approfondir cet aspect spécifique. """
+        Pour bien comprendre le concept « {concept} », il est essentiel de maîtriser certains prérequis étroitement liés à ce sujet. 
+        Voici les prérequis pertinents : {', '.join(prerequisites)}.
+        Pour chaque prérequis identifié :
+        - Présente uniquement les aspects directement utiles pour comprendre le concept « {concept} ».
+        - Donne un exemple concret ou une analogie en lien direct avec le concept pour illustrer ces aspects.
+        - Concentre-toi sur les notions clés permettant de faire le lien entre ce prérequis et le concept.
+        - Propose une ressource ciblée (article, tutoriel ou vidéo) permettant d’approfondir spécifiquement ce prérequis dans le contexte du concept « {concept} ».
+        """
         if prerequisites
-        else "Ce concept ne nécessite aucun prérequis particulier.\n"
-    )
+        else "Ce concept ne nécessite aucun prérequis particulier.\n")
+
 
     concept_text = f"""
     Explique maintenant le concept '{concept}' de manière claire, ciblée et pédagogique :
@@ -353,130 +360,8 @@ async def handle_unknown_concept(action):
         ).send()
         cl.user_session.set("current_index", index + 1)
         await ask_concept_question()@cl.action_callback("no")
-async def handle_unknown_concept(action):
-    concepts = cl.user_session.get("concepts")
-    index = cl.user_session.get("current_index")
-    concept = concepts[index]
 
-    with driver.session() as session:
-        prerequisites = session.read_transaction(get_prerequisites, concept)
 
-    prereq_text = (
-        f"""
-        Pour bien comprendre le concept '{concept}', il est important de maîtriser certains prérequis étroitement liés à ce sujet.
-        Voici les prérequis pertinents :
-        {', '.join(prerequisites)}
-        Pour chaque prérequis sélectionné :
-        - Explique uniquement les aspects directement utiles pour comprendre le concept '{concept}'.
-        - Illustre chaque point avec un exemple concret ou une analogie liée au concept.
-        - Ne développe que les notions essentielles pour faire le lien avec le concept.
-        - Suggère une ressource ciblée (article, tutoriel ou vidéo) pour approfondir cet aspect spécifique. """
-        if prerequisites
-        else "Ce concept ne nécessite aucun prérequis particulier.\n"
-    )
-
-    concept_text = f"""
-    Explique maintenant le concept '{concept}' de manière claire, ciblée et pédagogique :
-    
-    - Décris les idées clés du concept : à quoi il sert, pourquoi il est important, et dans quels contextes on l’utilise.
-    - Détaille uniquement les usages les plus pertinents pour un étudiant débutant ou en difficulté.
-    - Utilise des exemples ou analogies en lien avec les prérequis mentionnés précédemment.
-    - Montre les erreurs fréquentes ou confusions possibles à éviter.
-    - Suggère 1 ou 2 ressources bien choisies pour renforcer la compréhension et pratiquer le concept efficacement."""
-
-    quiz_prompt = f"""
-    Génère 3 questions Vrai/Faux au FORMAT JSON STRICT pour '{concept}'.
-    Respecte scrupuleusement :
-    - Guillemets doubles uniquement
-    - Pas de texte hors JSON
-    - Réponses uniquement 'Vrai'/'Faux'
-    - Questions courtes (<20 mots)
-    
-    Exemple VALIDE :
-    {{
-        "quiz": [
-            {{
-                "question": "Le HTTP utilise le port 80 par défaut",
-                "answer": "Vrai"
-            }},
-            {{
-                "question": "SSL et TLS désignent le même protocole",
-                "answer": "Faux"
-            }}
-        ]
-    }}"""
-
-    try:
-        # Génération des contenus
-        explanation = await cl.make_async(llm.invoke)(prereq_text + "\n\n" + concept_text)
-        quiz_response = await cl.make_async(llm.invoke)(quiz_prompt)
-
-        # Nettoyage du JSON
-        quiz_json = quiz_response.strip()
-        quiz_json = quiz_json.replace("'", '"').replace("“", '"').replace("”", '"')
-        
-        # Extraction du JSON depuis les blocs Markdown
-        if '```json' in quiz_json:
-            quiz_json = quiz_json.split('```json')[1].split('```')[0]
-        
-        # Correction automatique des virgules manquantes
-        quiz_json = quiz_json.replace('}{', '},{').replace('}\n{', '},\n{')
-        
-        # Validation et parsing
-        try:
-            data = json.loads(quiz_json)
-            quiz_data = data.get("quiz", [])
-            
-            if not isinstance(quiz_data, list):
-                raise ValueError("Structure 'quiz' invalide")
-                
-            # Validation des questions
-            for i, q in enumerate(quiz_data):
-                if not isinstance(q, dict):
-                    raise ValueError(f"Question {i+1} n'est pas un objet")
-                if 'question' not in q or 'answer' not in q:
-                    raise ValueError(f"Question {i+1} manque des champs requis")
-                
-                # Normalisation des réponses
-                q['answer'] = q['answer'].strip().title()
-                if q['answer'] not in ['VRAI', 'FAUX']:
-                    q['answer'] = 'Vrai'  # Valeur par défaut sécurisée
-
-        except Exception as e:
-            # Fallback en cas d'erreur persistante
-            quiz_data = [{
-                "question": f"Question {i+1} (Erreur technique)",
-                "answer": "Vrai"
-            } for i in range(3)]
-            
-            await cl.Message(
-                f"⚠️ Problème de formatage du quiz. Erreur : {str(e)}\n"
-                f"Réponse brute du modèle :\n{quiz_response}"
-            ).send()
-
-        # Affichage avec payload corrigé
-        await cl.Message(
-            content=f"📘 **{concept}**\n{explanation.strip()}",
-            actions=[
-                cl.Action(name="generate_quiz", label="🧠 Générer un nouveau quiz", payload={"concept": concept}),
-                cl.Action(name="more_examples", label="💡 Plus d'exemples", payload={"concept": concept})
-            ]
-        ).send()
-
-        # Sauvegarde des données
-        cl.user_session.set("current_quiz", quiz_data)
-        cl.user_session.set("quiz_index", 0)
-        cl.user_session.set("quiz_score", 0)
-        
-        await send_quiz_question()
-
-    except Exception as e:
-        await cl.Message(
-            f"⚠️ Erreur lors de la génération : {str(e)}\n"
-            "Nous passons au concept suivant."
-        ).send()
-        cl.user_session.set("current_index", index + 1)
-        await ask_concept_question()
 # ---------------------------
 # Envoyer une question du quiz
 # ---------------------------
@@ -560,6 +445,8 @@ async def handle_quiz_response(user_answer):
 # Lancer l'analyse du PDF après la fin des quiz
 # ---------------------------
 async def handle_pdf_upload():
+  
+    
     files = None
     
     # Demande d'upload de fichier
@@ -584,8 +471,14 @@ async def handle_pdf_upload():
     metadatas = [{"source": f"{i}-pl"} for i in range(len(texts))]
 
     # Embedding & indexation
+    persist_dir = "./chroma_db"
     embeddings = OllamaEmbeddings(model="nomic-embed-text")
-    docsearch = await cl.make_async(Chroma.from_texts)(texts, embeddings, metadatas=metadatas)
+    docsearch = await cl.make_async(Chroma.from_texts)(
+        texts, 
+        embeddings, 
+        metadatas=metadatas,
+        persist_directory=persist_dir ) # Ajout crucial
+    docsearch.persist()
 
     # Mémoire de conversation
     memory = ConversationBufferMemory(
@@ -652,10 +545,19 @@ async def handle_pdf_upload():
                         prerequisites = session.read_transaction(get_prerequisites, concept)
 
                     if prerequisites:
-                        prereq_text = f"""
-                        Pour bien comprendre le concept '{concept}', il faut connaître les notions suivantes : {', '.join(prerequisites)}.
-                        Explique ces prérequis simplement, avec des exemples concrets, et propose des ressources pour les étudier.
-                        """
+                        
+                        prereq_text = ( f"""
+                                       Pour bien comprendre le concept « {concept} », il est essentiel de maîtriser certains prérequis étroitement liés à ce sujet.
+                                       Voici les prérequis pertinents : {', '.join(prerequisites)}.
+                                       Pour chaque prérequis identifié :
+                                       - Présente uniquement les aspects directement utiles pour comprendre le concept « {concept} ».
+                                       - Donne un exemple concret ou une analogie en lien direct avec le concept pour illustrer ces aspects.
+                                       - Concentre-toi sur les notions clés permettant de faire le lien entre ce prérequis et le concept.
+                                       - Propose une ressource ciblée (article, tutoriel ou vidéo) permettant d’approfondir spécifiquement ce prérequis dans le contexte du concept « {concept} ».
+                                       """
+                                       if prerequisites
+                                       else "Ce concept ne nécessite aucun prérequis particulier.\n")
+
                     else:
                         prereq_text = "Ce concept ne nécessite aucun prérequis particulier.\n"
 
@@ -695,6 +597,7 @@ async def handle_pdf_upload():
         await cl.Message("❌ Aucun concept détecté dans ce document.").send()
 
     cl.user_session.set("full_pdf_text", pdf_text)
+    
     await cl.Message("🎓 Le PDF a été traité. Vous pouvez maintenant poser vos questions !").send()
 
     

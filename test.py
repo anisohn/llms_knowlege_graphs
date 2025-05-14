@@ -17,11 +17,14 @@ import pytesseract
 from pdf2image import convert_from_path
 from PIL import Image
 import json
+chatCount = 0
 
 # Connexion à Neo4j
 uri = "bolt://localhost:7687"
 username = "neo4j"
 password = "12345678"
+
+
 
 try:
     driver = GraphDatabase.driver(uri, auth=(username, password))
@@ -112,6 +115,10 @@ async def generate_explanation(action):
 
 @cl.on_message
 async def main(message: cl.Message):
+    global chatCount 
+    chatCount += 1
+    if chatCount > 5:
+        print("Limite de messages atteinte.")
     chain = cl.user_session.get("chain")
     cb = cl.AsyncLangchainCallbackHandler()
     
@@ -239,17 +246,17 @@ async def handle_unknown_concept(action):
 
     prereq_text = (
         f"""
-        Pour bien comprendre le concept '{concept}', il est important de maîtriser certains prérequis étroitement liés à ce sujet.
-        Voici les prérequis pertinents :
-        {', '.join(prerequisites)}
-        Pour chaque prérequis sélectionné :
-        - Explique uniquement les aspects directement utiles pour comprendre le concept '{concept}'.
-        - Illustre chaque point avec un exemple concret ou une analogie liée au concept.
-        - Ne développe que les notions essentielles pour faire le lien avec le concept.
-        - Suggère une ressource ciblée (article, tutoriel ou vidéo) pour approfondir cet aspect spécifique. """
+        Pour bien comprendre le concept « {concept} », il est essentiel de maîtriser certains prérequis étroitement liés à ce sujet. 
+        Voici les prérequis pertinents : {', '.join(prerequisites)}.
+        Pour chaque prérequis identifié :
+        - Présente uniquement les aspects directement utiles pour comprendre le concept « {concept} ».
+        - Donne un exemple concret ou une analogie en lien direct avec le concept pour illustrer ces aspects.
+        - Concentre-toi sur les notions clés permettant de faire le lien entre ce prérequis et le concept.
+        - Propose une ressource ciblée (article, tutoriel ou vidéo) permettant d’approfondir spécifiquement ce prérequis dans le contexte du concept « {concept} ».
+        """
         if prerequisites
-        else "Ce concept ne nécessite aucun prérequis particulier.\n"
-    )
+        else "Ce concept ne nécessite aucun prérequis particulier.\n")
+
 
     concept_text = f"""
     Explique maintenant le concept '{concept}' de manière claire, ciblée et pédagogique :
@@ -438,6 +445,8 @@ async def handle_quiz_response(user_answer):
 # Lancer l'analyse du PDF après la fin des quiz
 # ---------------------------
 async def handle_pdf_upload():
+  
+    
     files = None
     
     # Demande d'upload de fichier
@@ -462,8 +471,14 @@ async def handle_pdf_upload():
     metadatas = [{"source": f"{i}-pl"} for i in range(len(texts))]
 
     # Embedding & indexation
+    persist_dir = "./chroma_db"
     embeddings = OllamaEmbeddings(model="nomic-embed-text")
-    docsearch = await cl.make_async(Chroma.from_texts)(texts, embeddings, metadatas=metadatas)
+    docsearch = await cl.make_async(Chroma.from_texts)(
+        texts, 
+        embeddings, 
+        metadatas=metadatas,
+        persist_directory=persist_dir ) # Ajout crucial
+    docsearch.persist()
 
     # Mémoire de conversation
     memory = ConversationBufferMemory(
@@ -530,19 +545,19 @@ async def handle_pdf_upload():
                         prerequisites = session.read_transaction(get_prerequisites, concept)
 
                     if prerequisites:
-                         prereq_text = (
-                             f"""
-                             Pour bien comprendre le concept '{concept}', il est important de maîtriser certains prérequis étroitement liés à ce sujet.
-                             Voici les prérequis pertinents :
-                             {', '.join(prerequisites)}
-                             Pour chaque prérequis sélectionné :
-                             - Explique uniquement les aspects directement utiles pour comprendre le concept '{concept}'.
-                             - Illustre chaque point avec un exemple concret ou une analogie liée au concept.
-                             - Ne développe que les notions essentielles pour faire le lien avec le concept.
-                             - Suggère une ressource ciblée (article, tutoriel ou vidéo) pour approfondir cet aspect spécifique. """
-                             if prerequisites
-                             else "Ce concept ne nécessite aucun prérequis particulier.\n"
-                             )
+                        
+                        prereq_text = ( f"""
+                                       Pour bien comprendre le concept « {concept} », il est essentiel de maîtriser certains prérequis étroitement liés à ce sujet.
+                                       Voici les prérequis pertinents : {', '.join(prerequisites)}.
+                                       Pour chaque prérequis identifié :
+                                       - Présente uniquement les aspects directement utiles pour comprendre le concept « {concept} ».
+                                       - Donne un exemple concret ou une analogie en lien direct avec le concept pour illustrer ces aspects.
+                                       - Concentre-toi sur les notions clés permettant de faire le lien entre ce prérequis et le concept.
+                                       - Propose une ressource ciblée (article, tutoriel ou vidéo) permettant d’approfondir spécifiquement ce prérequis dans le contexte du concept « {concept} ».
+                                       """
+                                       if prerequisites
+                                       else "Ce concept ne nécessite aucun prérequis particulier.\n")
+
                     else:
                         prereq_text = "Ce concept ne nécessite aucun prérequis particulier.\n"
 
@@ -582,6 +597,7 @@ async def handle_pdf_upload():
         await cl.Message("❌ Aucun concept détecté dans ce document.").send()
 
     cl.user_session.set("full_pdf_text", pdf_text)
+    
     await cl.Message("🎓 Le PDF a été traité. Vous pouvez maintenant poser vos questions !").send()
 
     
